@@ -1,0 +1,53 @@
+name: festival_app
+description: "A new Flutter project."
+publish_to: "none"
+version: 1.0.0
+
+environment:
+  sdk: ">=3.3.4 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_riverpod: ^2.5.1
+  json_annotation: ^4.8.1
+  flutter_screenutil: ^5.9.0
+  intl: ^0.19.0
+  hooks_riverpod: ^2.6.1
+  flutter_hooks: ^0.20.5
+  fluwx: ^3.13.1
+  cached_network_image: ^3.3.1
+  http: ^1.1.0
+  shared_preferences: ^2.2.2
+  webview_flutter: ^4.7.0
+  lottie: ^1.2.3 # 请使
+  dio: ^5.0.0
+  lunar: ^1.7.1 # 可根据实际情况选择合适的版本
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+  build_runner: ^2.4.6
+  json_serializable: ^6.7.0
+  logging: ^1.0.2
+  freezed: ^2.4.7
+  riverpod_generator: ^2.3.5
+  flutter_launcher_icons: ^0.13.1
+  intl: ^0.19.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/
+    - assets/images/login/
+    - assets/images/icon/
+    - assets/lotte/
+
+flutter_icons:
+  android: true
+  image_path: "assets/images/logo.png"
+  remove_alpha_ios: true
+  adaptive_icon_background: "#F8F8F8"
+  
+

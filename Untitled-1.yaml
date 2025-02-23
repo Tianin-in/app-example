@@ -1,0 +1,27 @@
+workflows:
+  ios-release:
+    name: iOS Release
+    environment:
+      vars:
+        BUNDLE_ID: "mo.festivalre"       # 替换为你的Bundle ID
+        XCODE_WORKSPACE: "Runner.xcworkspace"
+        XCODE_SCHEME: "Runner"
+      # 自动签名配置
+      app_store_connect:                    # 使用自动签名时需配置
+        key_id: HYQYJ7FBZHFG            # 替换为你的API密钥ID
+        issuer_id: 14219f2e-7d45-498c-828c-23929c45ea71      # 替换为你的Issuer ID
+        private_key: -----BEGIN PRIVATE KEY-----
+          MIGTAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBHkwdwIBAQQgMpzqqzX/PMMRs9Sp
+          0KjYvUZA1et0fmJiiaPyu+ePBKmgCgYIKoZIzj0DAQehRANCAASE8TPrp3rmFdnn
+          sBzFQpD3ucCFTNhOHBkmSoWTAcQchId3peQlCr3hA/Wum/0v5GDg+QhL4kftnA8J
+          IVPYvmzq
+          -----END PRIVATE KEY----- # 粘贴API私钥内容
+    scripts:
+      - flutter build ipa --export-method app-store  # 导出方法可选app-store/ad-hoc等
+    artifacts:
+      - build/ios/ipa/*.ipa
+    publishing:
+      app_store_connect:                    # 自动上传到App Store Connect
+        api_key: HYQYJ7FBZHFG
+        apple_id: "1585544088@qq.com"
+

@@ -1,0 +1,31 @@
+default_platform(:ios)
+
+platform :ios do
+  desc "Push a new beta build to TestFlight"
+  lane :release do
+    setup_ci if is_ci
+    
+    # 更新证书和配置文件
+    sync_code_signing(
+      type: "development",
+      readonly: true
+    )
+    
+    # 构建你的 iOS 应用
+    build_ios_app(
+      scheme: "Runner",
+      export_method: "development",
+      configuration: "Release",
+      clean: true,
+      output_directory: "build/ios/ipa",
+      output_name: "app.ipa",
+      include_bitcode: false,
+      include_symbols: true
+    )
+    
+    # 上传到 TestFlight
+    upload_to_testflight(
+      skip_waiting_for_build_processing: true
+    )
+  end
+end

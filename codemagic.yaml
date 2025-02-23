@@ -1,0 +1,197 @@
+workflows:
+  ios:
+    name: ios-workflow
+    max_build_duration: 60
+    environment:
+      vars:
+        BUNDLE_ID: "mo.festivalre"
+        APP_NAME: "HolidayRecorder"
+        APPLE_TEAM_ID: "48ZR977937"
+        APP_STORE_CONNECT_ISSUER_ID: "14219f2e-7d45-498c-828c-23929c45ea71"
+        APP_STORE_CONNECT_KEY_IDENTIFIER: "HYQYJ7FBZHFG"
+        APP_STORE_CONNECT_PRIVATE_KEY: |
+          -----BEGIN PRIVATE KEY-----
+          MIGTAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBHkwdwIBAQQgMpzqqzX/PMMRs9Sp
+          0KjYvUZA1et0fmJiiaPyu+ePBKmgCgYIKoZIzj0DAQehRANCAASE8TPrp3rmFdnn
+          sBzFQpD3ucCFTNhOHBkmSoWTAcQchId3peQlCr3hA/Wum/0v5GDg+QhL4kftnA8J
+          IVPYvmzq
+          -----END PRIVATE KEY---
+    scripts:
+      - name: Create Gemfile
+        script: |
+          echo 'source "https://rubygems.org"' > Gemfile
+          echo 'gem "fastlane"' >> Gemfile
+          echo 'gem "cocoapods"' >> Gemfile
+
+      - name: Set up fastlane
+        script: |
+          mkdir -p fastlane
+          cat > fastlane/Fastfile << 'EOL'
+          default_platform(:ios)
+
+          platform :ios do
+            desc "Push a new beta build to TestFlight"
+            lane :release do
+              setup_ci if is_ci
+              
+              # 设置 App Store Connect API 密钥
+              api_key = app_store_connect_api_key(
+                key_id: ENV["APP_STORE_CONNECT_KEY_IDENTIFIER"],
+                issuer_id: ENV["APP_STORE_CONNECT_ISSUER_ID"],
+                key_content: ENV["APP_STORE_CONNECT_PRIVATE_KEY"],
+                duration: 1200,
+                in_house: false
+              )
+              
+              # 构建你的 iOS 应用
+              ipa_path = build_ios_app(
+                workspace: "ios/Runner.xcworkspace",
+                scheme: "Runner",
+                export_method: "app-store",
+                configuration: "Release",
+                output_directory: "../build/ios/ipa",
+                output_name: "app.ipa",
+                include_bitcode: false,
+                include_symbols: true,
+                silent: false,
+                clean: true,
+                export_options: {
+                  method: "app-store",
+                  provisioningProfiles: {
+                    ENV["BUNDLE_ID"] => "jieriji_appstore"
+                  }
+                }
+              )
+              
+              # 上传到 TestFlight
+              begin
+                upload_to_testflight(
+                  api_key: api_key,
+                  ipa: ipa_path,
+                  skip_waiting_for_build_processing: true,
+                  skip_submission: true,
+                  distribute_external: false,
+                  notify_external_testers: false,
+                  changelog: "Bug fixes and improvements"
+                )
+              rescue => ex
+                UI.error(ex)
+                UI.error("Failed to upload to TestFlight")
+                error_info = "Error: #{ex.message}"
+                UI.message(error_info)
+                raise error_info
+              end
+            end
+          end
+          EOL
+
+      - name: install ruby
+        script: |
+          gem install bundler
+          bundle install
+
+      - name: Install dependencies
+        script: |
+          flutter pub get
+
+      - name: Build iOS
+        script: |
+          # 设置 Xcode 项目的 bundle identifier
+          /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $BUNDLE_ID" ios/Runner/Info.plist
+
+          # 更新项目设置
+          cd ios
+          xcodebuild -project Runner.xcodeproj -target Runner -showBuildSettings
+
+          # 设置开发团队和配置
+          sed -i '' "s/DEVELOPMENT_TEAM = \"\"/DEVELOPMENT_TEAM = $APPLE_TEAM_ID/g" Runner.xcodeproj/project.pbxproj
+          sed -i '' "s/CODE_SIGN_STYLE = Automatic/CODE_SIGN_STYLE = Manual/g" Runner.xcodeproj/project.pbxproj
+          sed -i '' "s/PROVISIONING_PROFILE_SPECIFIER = \"\"/PROVISIONING_PROFILE_SPECIFIER = jieriji_appstore/g" Runner.xcodeproj/project.pbxproj
+
+          cd ..
+          flutter build ios --release
+
+      - name: Code signing
+        script: |
+          mkdir -p $HOME/ios_certs
+          echo "$MY_PRIVATE_KEY" | base64 --decode > $HOME/ios_certs/distribution_certificate.p12
+          echo "$MY_PRIVATE_PROVISIONG" | base64 --decode > $HOME/ios_certs/jieriji_appstore.mobileprovision
+
+          # 设置 Keychain
+          KEYCHAIN_PATH="$HOME/Library/Keychains/build.keychain-db"
+          KEYCHAIN_PASSWORD="codemagic"
+
+          # 创建和配置 Keychain
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          # 添加到 Keychain 列表并设置为默认
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | xargs)
+          security default-keychain -s "$KEYCHAIN_PATH"
+
+          # 导入证书
+          security import $HOME/ios_certs/distribution_certificate.p12 -k "$KEYCHAIN_PATH" -P "$MY_PRIVATE_KEY_PASSWORD" -A
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          # 安装描述文件
+          PROFILE_PATH="$HOME/Library/MobileDevice/Provisioning Profiles"
+          mkdir -p "$PROFILE_PATH"
+          UUID=$(grep UUID -A1 -a $HOME/ios_certs/jieriji_appstore.mobileprovision | grep -io "[-A-F0-9]\{36\}")
+          cp $HOME/ios_certs/jieriji_appstore.mobileprovision "$PROFILE_PATH/$UUID.mobileprovision"
+
+          # 设置项目的 provisioning profile
+          cd ios
+          /usr/libexec/PlistBuddy -c "Add :provisioningProfiles:$BUNDLE_ID string jieriji_appstore" ExportOptions.plist || true
+          /usr/libexec/PlistBuddy -c "Set :provisioningProfiles:$BUNDLE_ID jieriji_appstore" ExportOptions.plist
+          /usr/libexec/PlistBuddy -c "Add :method string app-store" ExportOptions.plist || true
+          /usr/libexec/PlistBuddy -c "Set :method app-store" ExportOptions.plist
+
+          # 配置 Fastlane
+          mkdir -p $HOME/.fastlane
+          cat > $HOME/.fastlane/Appfile << EOL
+          app_identifier("$BUNDLE_ID")
+          team_id("$APPLE_TEAM_ID")
+          EOL
+
+      - name: Upload to TestFlight
+        script: |
+          # 设置基本环境变量
+          export LC_ALL=en_US.UTF-8
+          export LANG=en_US.UTF-8
+          export FASTLANE_SKIP_UPDATE_CHECK=1
+          export FASTLANE_HIDE_TIMESTAMP=true
+          export FASTLANE_OPT_OUT_USAGE=1
+          export FASTLANE_SKIP_ACTION_SUMMARY=1
+          export SPACESHIP_SKIP_2FA_UPGRADE=1
+          export FASTLANE_XCODEBUILD_SETTINGS_TIMEOUT=120
+          export FASTLANE_XCODEBUILD_SETTINGS_RETRIES=10
+          export FASTLANE_APPLE_SILENCE_BUNDLER_WARNINGS=1
+          export PILOT_SKIP_WAITING_FOR_BUILD_PROCESSING=true
+          export PILOT_SKIP_SUBMISSION=true
+          export SPACESHIP_CONNECT_API_IN_HOUSE=false
+          export SPACESHIP_CONNECT_API_TOKEN_DURATION=1200
+          export DELIVER_ITMSTRANSPORTER_ADDITIONAL_UPLOAD_PARAMETERS="-t DAV"
+
+          # 创建 API Key 文件
+          mkdir -p ~/.appstoreconnect/private_keys
+          echo "$APP_STORE_CONNECT_PRIVATE_KEY" > ~/.appstoreconnect/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_IDENTIFIER}.p8
+
+          cd ios
+          bundle exec fastlane ios release --verbose
+
+          # 确保 IPA 文件被复制到正确的位置
+          mkdir -p ../build/ios/ipa
+          if [ -f "build/ios/ipa/app.ipa" ]; then
+            cp build/ios/ipa/app.ipa ../build/ios/ipa/
+          elif [ -f "../build/ios/ipa/app.ipa" ]; then
+            echo "IPA file already in correct location"
+          else
+            echo "Looking for IPA file in other locations..."
+            find ~ -name "*.ipa" -type f
+          fi
+
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - $HOME/Library/Developer/Xcode/Archives/**/*.ipa
+      - ios/build/ios/ipa/*.ipa
